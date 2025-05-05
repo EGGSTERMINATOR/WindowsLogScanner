@@ -53,32 +53,49 @@ def settings():
             'use_ssl': bool(request.form.get('rabbitmq_ssl', False))
         }
         
+        # Создаем конфигурацию для сохранения
+        config_data = {
+            'rabbitmq': rabbitmq_config
+        }
+        
         # Сохранение настроек в файл config.yml
-        with open('config.yml', 'w') as config_file:
-            yaml.dump({'rabbitmq': rabbitmq_config}, config_file, default_flow_style=False)
+        try:
+            with open('config.yml', 'w', encoding='utf-8') as config_file:
+                yaml.dump(config_data, config_file, default_flow_style=False, allow_unicode=True)
+                
+            flash('Настройки успешно сохранены', 'success')
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении конфигурации: {str(e)}")
+            flash(f'Ошибка при сохранении настроек: {str(e)}', 'danger')
             
-        flash('Настройки успешно сохранены', 'success')
         return redirect(url_for('settings'))
     
     # Загрузка текущих настроек
-    config = {}
-    try:
-        with open('config.yml', 'r') as config_file:
-            config = yaml.safe_load(config_file) or {}
-    except FileNotFoundError:
-        # Если файл не найден, используем настройки по умолчанию
-        config = {
-            'rabbitmq': {
-                'host': '192.168.239.181',
-                'port': 5672,
-                'vhost': '/win_logs',
-                'username': 'win_agent',
-                'password': '12345678',
-                'exchange': 'windows_logs',
-                'routing_key': 'system.logs',
-                'use_ssl': False
-            }
+    config = {
+        'rabbitmq': {
+            'host': '192.168.239.181',
+            'port': 5672,
+            'vhost': '/win_logs',
+            'username': 'win_agent',
+            'password': '12345678',
+            'exchange': 'windows_logs',
+            'routing_key': 'system.logs',
+            'use_ssl': False
         }
+    }
+    
+    # Пытаемся загрузить настройки из файла
+    try:
+        if os.path.exists('config.yml'):
+            with open('config.yml', 'r', encoding='utf-8') as config_file:
+                file_config = yaml.safe_load(config_file)
+                if file_config and isinstance(file_config, dict):
+                    # Обновляем значения по умолчанию 
+                    if 'rabbitmq' in file_config and isinstance(file_config['rabbitmq'], dict):
+                        config['rabbitmq'].update(file_config['rabbitmq'])
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке конфигурации: {str(e)}")
+        flash(f'Ошибка при загрузке настроек: {str(e)}', 'warning')
     
     return render_template('settings.html', config=config)
 
@@ -87,20 +104,35 @@ def connect_rabbitmq():
     """API для подключения к RabbitMQ"""
     try:
         # Загрузка настроек
-        with open('config.yml', 'r') as config_file:
-            config = yaml.safe_load(config_file) or {}
+        rabbitmq_settings = {
+            'host': '192.168.239.181',
+            'port': 5672,
+            'vhost': '/win_logs',
+            'username': 'win_agent',
+            'password': '12345678',
+            'exchange': 'windows_logs',
+            'routing_key': 'system.logs'
+        }
         
-        rabbitmq_settings = config.get('rabbitmq', {})
+        # Пытаемся загрузить настройки из файла
+        try:
+            if os.path.exists('config.yml'):
+                with open('config.yml', 'r', encoding='utf-8') as config_file:
+                    config = yaml.safe_load(config_file)
+                    if config and isinstance(config, dict) and 'rabbitmq' in config:
+                        rabbitmq_settings.update(config['rabbitmq'])
+        except Exception as e:
+            logger.warning(f"Не удалось загрузить настройки из файла: {str(e)}")
         
         # Подключение к RabbitMQ
         result = rabbitmq_client.connect(
-            host=rabbitmq_settings.get('host', '192.168.239.181'),
-            port=rabbitmq_settings.get('port', 5672),
-            virtual_host=rabbitmq_settings.get('vhost', '/win_logs'),
-            username=rabbitmq_settings.get('username', 'win_agent'),
-            password=rabbitmq_settings.get('password', '12345678'),
-            exchange=rabbitmq_settings.get('exchange', 'windows_logs'),
-            routing_key=rabbitmq_settings.get('routing_key', 'system.logs')
+            host=rabbitmq_settings.get('host'),
+            port=rabbitmq_settings.get('port'),
+            virtual_host=rabbitmq_settings.get('vhost'),
+            username=rabbitmq_settings.get('username'),
+            password=rabbitmq_settings.get('password'),
+            exchange=rabbitmq_settings.get('exchange'),
+            routing_key=rabbitmq_settings.get('routing_key')
         )
         
         if result:
@@ -162,10 +194,15 @@ def get_agent_logs():
 def get_status():
     """API для получения статуса подключения к RabbitMQ"""
     status = {
-        'rabbitmq_connected': rabbitmq_client.is_connected if hasattr(rabbitmq_client, 'is_connected') else False,
+        'rabbitmq_connected': False,
         'system_info': get_system_info(),
         'current_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
+    
+    # Проверяем статус подключения RabbitMQ
+    if hasattr(rabbitmq_client, 'is_connected'):
+        status['rabbitmq_connected'] = rabbitmq_client.is_connected
+        
     return jsonify(status)
 
 if __name__ == "__main__":

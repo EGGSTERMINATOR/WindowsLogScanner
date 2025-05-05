@@ -5,33 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Агент сбора системных логов Windows{% endblock %}</title>
     <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
-    <style>
-        body {
-            padding-top: 56px;
-        }
-        .log-table {
-            font-size: 0.9rem;
-        }
-        .log-message {
-            max-width: 500px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .status-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 5px;
-        }
-        .status-connected {
-            background-color: var(--bs-success);
-        }
-        .status-disconnected {
-            background-color: var(--bs-danger);
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
@@ -44,6 +19,9 @@
                 <ul class="navbar-nav">
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/">Главная</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/windows_logs' %}active{% endif %}" href="/windows_logs">Системные логи</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/logs' %}active{% endif %}" href="/logs">Журнал агента</a>
@@ -62,7 +40,7 @@
         </div>
     </nav>
 
-    <div class="container my-4">
+    <div class="container my-4 pt-5">
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
             {% for category, message in messages %}
@@ -91,45 +69,7 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Обновление текущего времени
-        function updateTime() {
-            const now = new Date();
-            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-            document.getElementById('current-time').textContent = now.toLocaleDateString('ru-RU', options);
-        }
-        
-        // Обновление статуса подключения к RabbitMQ
-        function updateRabbitMQStatus() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    const statusIndicator = document.getElementById('rabbitmq-status-indicator');
-                    const statusText = document.getElementById('rabbitmq-status-text');
-                    
-                    if (data.rabbitmq_connected) {
-                        statusIndicator.className = 'status-indicator status-connected';
-                        statusText.textContent = 'RabbitMQ: Подключен';
-                    } else {
-                        statusIndicator.className = 'status-indicator status-disconnected';
-                        statusText.textContent = 'RabbitMQ: Не подключен';
-                    }
-                })
-                .catch(error => {
-                    console.error('Ошибка при получении статуса:', error);
-                });
-        }
-        
-        // Запуск при загрузке страницы
-        updateTime();
-        updateRabbitMQStatus();
-        
-        // Обновление времени каждую секунду
-        setInterval(updateTime, 1000);
-        
-        // Обновление статуса RabbitMQ каждые 10 секунд
-        setInterval(updateRabbitMQStatus, 10000);
-    </script>
+    <script src="/static/js/main.js"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

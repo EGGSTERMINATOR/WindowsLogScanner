@@ -1,0 +1,497 @@
+{% extends 'base.html' %}
+
+{% block title %}Системные логи Windows - Агент сбора логов Windows{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-light d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Системные логи Windows</h5>
+                <div>
+                    <button id="start-collecting" class="btn btn-light btn-sm">
+                        <i class="bi bi-play-fill"></i> Начать сбор
+                    </button>
+                    <button id="stop-collecting" class="btn btn-light btn-sm" disabled>
+                        <i class="bi bi-stop-fill"></i> Остановить сбор
+                    </button>
+                    <button id="clear-logs" class="btn btn-light btn-sm">
+                        <i class="bi bi-trash"></i> Очистить
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-8">
+                        <div class="input-group">
+                            <span class="input-group-text">Фильтр</span>
+                            <input type="text" id="log-filter" class="form-control" placeholder="Введите текст для фильтрации...">
+                            <select id="level-filter" class="form-select">
+                                <option value="all">Все уровни</option>
+                                <option value="1">Информация</option>
+                                <option value="2">Предупреждение</option>
+                                <option value="3">Ошибка</option>
+                                <option value="4">Успешный аудит</option>
+                                <option value="5">Неудачный аудит</option>
+                            </select>
+                            <button id="apply-filter" class="btn btn-secondary">Применить</button>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <select id="log-type-filter" class="form-select">
+                                <option value="all">Все журналы</option>
+                                <option value="System">Система</option>
+                                <option value="Application">Приложение</option>
+                                <option value="Security">Безопасность</option>
+                                <option value="Setup">Настройка</option>
+                                <option value="DNS Server">Перенаправление DNS-сервера</option>
+                                <option value="Directory Service">Active Directory</option>
+                            </select>
+                            <button id="send-to-rabbitmq" class="btn btn-primary" disabled>
+                                <i class="bi bi-send"></i> Отправить в RabbitMQ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table id="windows-logs-table" class="table table-hover table-striped log-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Время</th>
+                                <th>Журнал</th>
+                                <th>Источник</th>
+                                <th>Уровень</th>
+                                <th>ID</th>
+                                <th>Сообщение</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="7" class="text-center">Нет доступных логов. Нажмите "Начать сбор" для сбора логов Windows.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="status-bar" class="d-flex justify-content-between align-items-center mt-3">
+                    <div>
+                        <span id="status-text" class="badge bg-secondary">Готов к сбору логов</span>
+                    </div>
+                    <div>
+                        <span id="logs-count" class="badge bg-info">0 записей</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно с подробной информацией о логе -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1" aria-labelledby="logDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logDetailsModalLabel">Подробная информация о логе</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <tbody>
+                            <tr>
+                                <th>Время</th>
+                                <td id="detail-time"></td>
+                            </tr>
+                            <tr>
+                                <th>Журнал</th>
+                                <td id="detail-log-type"></td>
+                            </tr>
+                            <tr>
+                                <th>Источник</th>
+                                <td id="detail-source"></td>
+                            </tr>
+                            <tr>
+                                <th>Уровень</th>
+                                <td id="detail-level"></td>
+                            </tr>
+                            <tr>
+                                <th>ID события</th>
+                                <td id="detail-id"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-header">
+                        Сообщение
+                    </div>
+                    <div class="card-body">
+                        <pre id="detail-message" class="mb-0"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <button type="button" id="send-to-rabbitmq-modal" class="btn btn-primary">Отправить в RabbitMQ</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Глобальные переменные
+    let collectedLogs = [];
+    let isCollecting = false;
+    let currentLogDetails = null;
+    
+    // Начало сбора логов
+    document.getElementById('start-collecting').addEventListener('click', function() {
+        if (isCollecting) return;
+        
+        // Изменяем состояние кнопок
+        this.disabled = true;
+        document.getElementById('stop-collecting').disabled = false;
+        
+        // Обновляем статус
+        document.getElementById('status-text').className = 'badge bg-primary';
+        document.getElementById('status-text').textContent = 'Сбор логов...';
+        
+        // Имитация сбора логов (API будет реализовано позже)
+        isCollecting = true;
+        simulateLogCollection();
+    });
+    
+    // Остановка сбора логов
+    document.getElementById('stop-collecting').addEventListener('click', function() {
+        if (!isCollecting) return;
+        
+        // Изменяем состояние кнопок
+        this.disabled = true;
+        document.getElementById('start-collecting').disabled = false;
+        
+        // Обновляем статус
+        document.getElementById('status-text').className = 'badge bg-success';
+        document.getElementById('status-text').textContent = 'Сбор логов завершен';
+        
+        // Останавливаем сбор логов
+        isCollecting = false;
+        
+        // Разблокируем кнопку отправки в RabbitMQ
+        if (collectedLogs.length > 0) {
+            document.getElementById('send-to-rabbitmq').disabled = false;
+        }
+    });
+    
+    // Очистка собранных логов
+    document.getElementById('clear-logs').addEventListener('click', function() {
+        collectedLogs = [];
+        updateLogsTable();
+        document.getElementById('logs-count').textContent = '0 записей';
+        document.getElementById('send-to-rabbitmq').disabled = true;
+    });
+    
+    // Применение фильтра
+    document.getElementById('apply-filter').addEventListener('click', function() {
+        updateLogsTable();
+    });
+    
+    // Отправка логов в RabbitMQ
+    document.getElementById('send-to-rabbitmq').addEventListener('click', function() {
+        if (collectedLogs.length === 0) return;
+        
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Отправка...';
+        
+        // Фильтрация по типу журнала, если выбран
+        const logTypeFilter = document.getElementById('log-type-filter').value;
+        let logsToSend = collectedLogs;
+        
+        if (logTypeFilter !== 'all') {
+            logsToSend = collectedLogs.filter(log => log.log_type === logTypeFilter);
+        }
+        
+        // Отправка логов в RabbitMQ
+        const button = this;
+        let successCount = 0;
+        let failureCount = 0;
+        
+        // Имитация отправки логов в RabbitMQ
+        setTimeout(() => {
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-send"></i> Отправить в RabbitMQ';
+            
+            showAlert(`Отправлено в RabbitMQ: ${logsToSend.length} записей`, 'success');
+        }, 1500);
+    });
+    
+    // Отправка конкретного лога из модального окна
+    document.getElementById('send-to-rabbitmq-modal').addEventListener('click', function() {
+        if (!currentLogDetails) return;
+        
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Отправка...';
+        
+        // Имитация отправки лога в RabbitMQ
+        const button = this;
+        
+        fetch('/api/publish-log', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(currentLogDetails)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Лог успешно отправлен в RabbitMQ', 'success');
+            } else {
+                showAlert(`Ошибка отправки лога: ${data.message}`, 'danger');
+            }
+            button.disabled = false;
+            button.innerHTML = 'Отправить в RabbitMQ';
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            showAlert('Ошибка при отправке лога', 'danger');
+            button.disabled = false;
+            button.innerHTML = 'Отправить в RabbitMQ';
+        });
+    });
+    
+    // Функция имитации сбора логов
+    function simulateLogCollection() {
+        if (!isCollecting) return;
+        
+        // Журналы Windows
+        const logTypes = ['System', 'Application', 'Security', 'Setup', 'DNS Server', 'Directory Service'];
+        
+        // Источники событий
+        const sources = {
+            'System': ['Kernel-General', 'Service Control Manager', 'Power-Troubleshooter', 'DCOM'],
+            'Application': ['Application Hang', 'Windows Error Reporting', 'RestartManager'],
+            'Security': ['Security-Auditing', 'Eventlog', 'Audit'],
+            'Setup': ['WindowsUpdateClient', 'Windows-Setup', 'Servicing'],
+            'DNS Server': ['DNS-Client', 'DNS-Server', 'DNSAPI'],
+            'Directory Service': ['ActiveDirectory', 'NTDS ISAM', 'GroupPolicy']
+        };
+        
+        // Уровни событий
+        const levels = {
+            1: 'Информация',
+            2: 'Предупреждение',
+            3: 'Ошибка',
+            4: 'Успешный аудит',
+            5: 'Неудачный аудит'
+        };
+        
+        // Сообщения для разных типов журналов
+        const messages = {
+            'System': [
+                'Система была запущена после перезагрузки',
+                'Услуга была успешно запущена',
+                'Возникла ошибка при инициализации драйвера устройства'
+            ],
+            'Application': [
+                'Приложение не отвечает',
+                'Обновление приложения доступно',
+                'Ошибка при инициализации компонента'
+            ],
+            'Security': [
+                'Успешный вход в систему',
+                'Неудачный вход в систему',
+                'Изменение пароля пользователя'
+            ],
+            'Setup': [
+                'Установка обновления завершена успешно',
+                'Ошибка при установке обновления',
+                'Требуется перезагрузка для завершения установки'
+            ],
+            'DNS Server': [
+                'Не удалось разрешить имя хоста',
+                'Сервер DNS запущен',
+                'Ошибка при загрузке зоны DNS'
+            ],
+            'Directory Service': [
+                'Успешная репликация домена',
+                'Ошибка репликации домена',
+                'Изменение групповой политики'
+            ]
+        };
+        
+        // Генерируем случайный журнал
+        const logType = logTypes[Math.floor(Math.random() * logTypes.length)];
+        const source = sources[logType][Math.floor(Math.random() * sources[logType].length)];
+        const levelId = Math.floor(Math.random() * 5) + 1; // 1-5
+        const levelName = levels[levelId];
+        const message = messages[logType][Math.floor(Math.random() * messages[logType].length)];
+        const eventId = Math.floor(Math.random() * 10000);
+        
+        // Создаем объект лога
+        const log = {
+            id: eventId,
+            time: new Date().toISOString().replace('T', ' ').substr(0, 19),
+            source: source,
+            level: levelId,
+            level_name: levelName,
+            log_type: logType,
+            message: message
+        };
+        
+        // Добавляем лог в коллекцию
+        collectedLogs.push(log);
+        
+        // Обновляем таблицу логов
+        updateLogsTable();
+        
+        // Обновляем счетчик логов
+        document.getElementById('logs-count').textContent = `${collectedLogs.length} записей`;
+        
+        // Планируем следующий запуск
+        setTimeout(simulateLogCollection, 2000);
+    }
+    
+    // Обновление таблицы логов с учётом фильтров
+    function updateLogsTable() {
+        const table = document.getElementById('windows-logs-table');
+        const tbody = table.querySelector('tbody');
+        tbody.innerHTML = '';
+        
+        if (collectedLogs.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="7" class="text-center">Нет доступных логов. Нажмите "Начать сбор" для сбора логов Windows.</td>`;
+            tbody.appendChild(row);
+            return;
+        }
+        
+        // Получаем значения фильтров
+        const textFilter = document.getElementById('log-filter').value.toLowerCase();
+        const levelFilter = document.getElementById('level-filter').value;
+        const logTypeFilter = document.getElementById('log-type-filter').value;
+        
+        // Фильтруем логи
+        let filteredLogs = collectedLogs.filter(log => {
+            // Текстовый фильтр
+            if (textFilter && !(
+                log.source.toLowerCase().includes(textFilter) ||
+                log.message.toLowerCase().includes(textFilter) ||
+                log.log_type.toLowerCase().includes(textFilter)
+            )) {
+                return false;
+            }
+            
+            // Фильтр по уровню
+            if (levelFilter !== 'all' && log.level.toString() !== levelFilter) {
+                return false;
+            }
+            
+            // Фильтр по типу журнала
+            if (logTypeFilter !== 'all' && log.log_type !== logTypeFilter) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Сортируем по времени (новые сверху)
+        filteredLogs.sort((a, b) => new Date(b.time) - new Date(a.time));
+        
+        // Добавляем строки в таблицу
+        filteredLogs.forEach((log, index) => {
+            const row = document.createElement('tr');
+            row.className = 'log-row';
+            if (index === 0) row.classList.add('new-log'); // Анимация для нового лога
+            
+            let levelClass = '';
+            switch (log.level) {
+                case 1: levelClass = 'bg-info'; break;
+                case 2: levelClass = 'bg-warning text-dark'; break;
+                case 3: levelClass = 'bg-danger'; break;
+                case 4: levelClass = 'bg-success'; break;
+                case 5: levelClass = 'bg-secondary'; break;
+            }
+            
+            row.innerHTML = `
+                <td>${log.time}</td>
+                <td>${log.log_type}</td>
+                <td>${log.source}</td>
+                <td><span class="badge ${levelClass}">${log.level_name}</span></td>
+                <td>${log.id}</td>
+                <td class="log-message">${log.message}</td>
+                <td>
+                    <button class="btn btn-sm btn-info view-log" data-index="${index}">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-sm btn-primary send-log" data-index="${index}">
+                        <i class="bi bi-send"></i>
+                    </button>
+                </td>
+            `;
+            
+            tbody.appendChild(row);
+        });
+        
+        // Добавляем обработчики событий для кнопок
+        document.querySelectorAll('.view-log').forEach(button => {
+            button.addEventListener('click', function() {
+                const index = this.getAttribute('data-index');
+                showLogDetails(filteredLogs[index]);
+            });
+        });
+        
+        document.querySelectorAll('.send-log').forEach(button => {
+            button.addEventListener('click', function() {
+                const index = this.getAttribute('data-index');
+                sendLogToRabbitMQ(filteredLogs[index]);
+            });
+        });
+    }
+    
+    // Показ подробной информации о логе
+    function showLogDetails(log) {
+        // Сохраняем текущий лог
+        currentLogDetails = log;
+        
+        // Заполняем модальное окно
+        document.getElementById('detail-time').textContent = log.time;
+        document.getElementById('detail-log-type').textContent = log.log_type;
+        document.getElementById('detail-source').textContent = log.source;
+        document.getElementById('detail-level').textContent = log.level_name;
+        document.getElementById('detail-id').textContent = log.id;
+        document.getElementById('detail-message').textContent = log.message;
+        
+        // Открываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
+        modal.show();
+    }
+    
+    // Отправка одного лога в RabbitMQ
+    function sendLogToRabbitMQ(log) {
+        fetch('/api/publish-log', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(log)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Лог успешно отправлен в RabbitMQ', 'success');
+            } else {
+                showAlert(`Ошибка отправки лога: ${data.message}`, 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            showAlert('Ошибка при отправке лога', 'danger');
+        });
+    }
+</script>
+{% endblock %}
