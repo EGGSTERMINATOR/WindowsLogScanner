@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import logging
+import yaml
+import json
+import time
+import ssl
+import threading
+import pika
+import win32evtlog
+import os
+
+# --- Загрузка и парсинг конфигурации ---
+with open('config.yaml', 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
+
+rabbit_cfg = config['rabbitmq']
+interval = config.get('interval', 5)
+log_file = config.get('logging', {}).get('file', 'agent.log')
+log_level_str = config.get('logging', {}).get('level', 'INFO')
+use_ssl = rabbit_cfg.get('use_ssl', True)
+offsets_file = config.get('offsets_file', 'offsets.json')
+
+# --- Настройка логирования ---
+numeric_level = getattr(logging, log_level_str.upper(), logging.INFO)
+logging.basicConfig(
+    filename=log_file,
+    level=numeric_level,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
+logging.info(
+    "Агент запускается. Конфигурация загружена. SSL/TLS: %s",
+    "включено" if use_ssl else "отключено"
+)
+
+# --- Загрузка и инициализация смещений для каждого журнала ---
+def load_offsets(path):
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_offsets(path, data):
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+offsets = load_offsets(offsets_file)
+
+# --- Функция подключения к RabbitMQ ---
+def connect_to_rabbitmq():
+    try:
+        credentials = pika.PlainCredentials(
+            rabbit_cfg['username'], rabbit_cfg['password']
+        )
+        params_kwargs = {
+            'host': rabbit_cfg['host'],
+            'port': rabbit_cfg['port'],
+            'virtual_host': rabbit_cfg.get('vhost', '/'),
+            'credentials': credentials,
+            'heartbeat': rabbit_cfg.get('heartbeat', 60),
+            'blocked_connection_timeout': rabbit_cfg.get('blocked_connection_timeout', 30),
+        }
+
+        if use_ssl:
+            ssl_context = ssl.create_default_context(
+                cafile=rabbit_cfg['ca_cert']
+            )
+            ssl_context.load_cert_chain(
+                rabbit_cfg['ssl_cert'], rabbit_cfg['ssl_key']
+            )
+            params_kwargs['ssl_options'] = pika.SSLOptions(
+                context=ssl_context, server_hostname=rabbit_cfg['host']
+            )
+
+        params = pika.ConnectionParameters(**params_kwargs)
+        connection = pika.BlockingConnection(params)
+        channel = connection.channel()
+        channel.exchange_declare(
+            exchange=rabbit_cfg['exchange'],
+            exchange_type='fanout',
+            durable=True
+        )
+        logging.info(
+            "Успешно подключились к RabbitMQ (SSL: %s).",
+            "да" if use_ssl else "нет"
+        )
+        return connection, channel
+
+    except Exception as e:
+        logging.error(f"Ошибка подключения к RabbitMQ: {e}")
+        return None, None
+
+# --- Функция чтения и отправки новых событий (с учётом смещений) ---
+def collect_and_send(channel):
+    server = 'localhost'
+    log_types = ["Application", "System", "Security"]
+    for lt in log_types:
+        last_rec = offsets.get(lt, 0)
+        try:
+            hand = win32evtlog.OpenEventLog(server, lt)
+            # Если первый запуск, и смещение=0, определяем текущий край
+            if last_rec == 0:
+                flags_back = (
+                    win32evtlog.EVENTLOG_BACKWARDS_READ |
+                    win32evtlog.EVENTLOG_SEQUENTIAL_READ
+                )
+                events = win32evtlog.ReadEventLog(hand, flags_back, 0) or []
+                if events:
+                    offsets[lt] = events[0].RecordNumber
+                win32evtlog.CloseEventLog(hand)
+                continue
+
+            # Иначе читаем только новые события после last_rec
+            flags_seek = (
+                win32evtlog.EVENTLOG_FORWARDS_READ |
+                win32evtlog.EVENTLOG_SEEK_READ
+            )
+            events = win32evtlog.ReadEventLog(hand, flags_seek, last_rec) or []
+
+            for ev in events:
+                record = {
+                    'время': ev.TimeGenerated.Format(),
+                    'источник': ev.SourceName,
+                    'id_события': ev.EventID,
+                    'тип': ev.EventType,
+                    'категория': ev.EventCategory,
+                    'сообщение': ev.StringInserts or []
+                }
+                body = json.dumps(record, ensure_ascii=False)
+                channel.basic_publish(
+                    exchange=rabbit_cfg['exchange'],
+                    routing_key='',
+                    body=body
+                )
+                logging.info(
+                    f"Отправлено событие {record['id_события']} из {lt}"
+                )
+                last_rec = ev.RecordNumber
+
+            win32evtlog.CloseEventLog(hand)
+            offsets[lt] = last_rec
+        except Exception as err:
+            logging.error(f"Ошибка чтения лога {lt}: {err}")
+
+    # Сохраняем обновлённые смещения
+    save_offsets(offsets_file, offsets)
+    time.sleep(interval)
+
+# --- Главная логика с авто-подключением ---
+def main_loop():
+    while True:
+        conn, chan = connect_to_rabbitmq()
+        if not chan:
+            time.sleep(10)
+            continue
+
+        try:
+            while conn.is_open:
+                collect_and_send(chan)
+        except Exception:
+            logging.warning(
+                "Связь с RabbitMQ потеряна. Переподключение..."
+            )
+            try:
+                conn.close()
+            except:
+                pass
+        time.sleep(5)
+
+# --- Запуск в фоне ---
+if __name__ == '__main__':
+    logging.info("Запуск фонового потока сбора и отправки логов.")
+    worker = threading.Thread(
+        target=main_loop, daemon=True
+    )
+    worker.start()
+    while True:
+        time.sleep(1)

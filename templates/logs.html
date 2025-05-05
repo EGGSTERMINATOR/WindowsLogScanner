@@ -1,0 +1,216 @@
+{% extends 'base.html' %}
+
+{% block title %}Журнал агента - Агент сбора логов Windows{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-light d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Журнал агента</h5>
+                <div>
+                    <button id="refresh-logs" class="btn btn-light btn-sm">
+                        <i class="bi bi-arrow-clockwise"></i> Обновить
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <span class="input-group-text">Фильтр</span>
+                        <input type="text" id="log-filter" class="form-control" placeholder="Введите текст для фильтрации...">
+                        <select id="log-level-filter" class="form-select">
+                            <option value="all">Все уровни</option>
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO">INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                            <option value="CRITICAL">CRITICAL</option>
+                        </select>
+                        <button id="clear-filter" class="btn btn-secondary">Очистить</button>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table id="log-table" class="table table-hover table-striped log-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Время</th>
+                                <th>Имя</th>
+                                <th>Уровень</th>
+                                <th>Сообщение</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in log_entries %}
+                            <tr>
+                                {% set parts = entry.split(' - ') %}
+                                <td>{{ parts[0] if parts|length > 0 else '' }}</td>
+                                <td>{{ parts[1] if parts|length > 1 else '' }}</td>
+                                <td>
+                                    {% if parts|length > 2 %}
+                                        {% if 'ERROR' in parts[2] or 'CRITICAL' in parts[2] %}
+                                            <span class="badge bg-danger">{{ parts[2] }}</span>
+                                        {% elif 'WARNING' in parts[2] %}
+                                            <span class="badge bg-warning">{{ parts[2] }}</span>
+                                        {% elif 'INFO' in parts[2] %}
+                                            <span class="badge bg-info">{{ parts[2] }}</span>
+                                        {% elif 'DEBUG' in parts[2] %}
+                                            <span class="badge bg-secondary">{{ parts[2] }}</span>
+                                        {% else %}
+                                            <span class="badge bg-primary">{{ parts[2] }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td class="log-message">
+                                    {% if parts|length > 3 %}
+                                        {{ parts[3:] | join(' - ') }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center">Журнал пуст</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Обновление журнала
+    document.getElementById('refresh-logs').addEventListener('click', function() {
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Обновление...';
+        
+        const level = document.getElementById('log-level-filter').value;
+        const levelParam = level !== 'all' ? `&level=${level}` : '';
+        
+        fetch(`/api/agent-logs?max_entries=1000${levelParam}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const tbody = document.querySelector('#log-table tbody');
+                    tbody.innerHTML = '';
+                    
+                    if (data.logs.length === 0) {
+                        const row = document.createElement('tr');
+                        row.innerHTML = '<td colspan="4" class="text-center">Журнал пуст</td>';
+                        tbody.appendChild(row);
+                    } else {
+                        data.logs.forEach(entry => {
+                            const parts = entry.split(' - ');
+                            const row = document.createElement('tr');
+                            
+                            // Время
+                            const tdTime = document.createElement('td');
+                            tdTime.textContent = parts[0] || '';
+                            row.appendChild(tdTime);
+                            
+                            // Имя
+                            const tdName = document.createElement('td');
+                            tdName.textContent = parts[1] || '';
+                            row.appendChild(tdName);
+                            
+                            // Уровень
+                            const tdLevel = document.createElement('td');
+                            if (parts.length > 2) {
+                                const levelSpan = document.createElement('span');
+                                let badgeClass = 'badge bg-primary';
+                                
+                                if (parts[2].includes('ERROR') || parts[2].includes('CRITICAL')) {
+                                    badgeClass = 'badge bg-danger';
+                                } else if (parts[2].includes('WARNING')) {
+                                    badgeClass = 'badge bg-warning';
+                                } else if (parts[2].includes('INFO')) {
+                                    badgeClass = 'badge bg-info';
+                                } else if (parts[2].includes('DEBUG')) {
+                                    badgeClass = 'badge bg-secondary';
+                                }
+                                
+                                levelSpan.className = badgeClass;
+                                levelSpan.textContent = parts[2];
+                                tdLevel.appendChild(levelSpan);
+                            }
+                            row.appendChild(tdLevel);
+                            
+                            // Сообщение
+                            const tdMessage = document.createElement('td');
+                            tdMessage.className = 'log-message';
+                            if (parts.length > 3) {
+                                tdMessage.textContent = parts.slice(3).join(' - ');
+                            }
+                            row.appendChild(tdMessage);
+                            
+                            tbody.appendChild(row);
+                        });
+                    }
+                    
+                    applyFilter();
+                } else {
+                    showAlert('Ошибка при получении журнала: ' + data.message, 'danger');
+                }
+                
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновить';
+            })
+            .catch(error => {
+                console.error('Ошибка:', error);
+                showAlert('Ошибка при получении журнала', 'danger');
+                button.disabled = false;
+                button.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновить';
+            });
+    });
+    
+    // Фильтрация журнала
+    const filterInput = document.getElementById('log-filter');
+    const levelFilter = document.getElementById('log-level-filter');
+    
+    filterInput.addEventListener('input', applyFilter);
+    levelFilter.addEventListener('change', function() {
+        document.getElementById('refresh-logs').click();
+    });
+    
+    document.getElementById('clear-filter').addEventListener('click', function() {
+        filterInput.value = '';
+        levelFilter.value = 'all';
+        document.getElementById('refresh-logs').click();
+    });
+    
+    function applyFilter() {
+        const filterValue = filterInput.value.toLowerCase();
+        const rows = document.querySelectorAll('#log-table tbody tr');
+        
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(filterValue) ? '' : 'none';
+        });
+    }
+    
+    // Показ уведомления
+    function showAlert(message, type) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(alertDiv, container.firstChild);
+        
+        setTimeout(() => {
+            const bsAlert = new bootstrap.Alert(alertDiv);
+            bsAlert.close();
+        }, 5000);
+    }
+</script>
+{% endblock %}

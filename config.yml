@@ -1,0 +1,33 @@
+# Параметры подключения к RabbitMQ
+rabbitmq:
+  host: "192.168.239.181"      # адрес сервера RabbitMQ
+  port: 5672                     # порт SSL/TLS (обычно 5671)
+  username: "win_agent"          # имя пользователя
+  password: "12345678"     # пароль
+  vhost: "/win_logs"
+  exchange: "windows_logs"
+  routing_key: "system.logs"
+  use_ssl: false
+  ssl_cert: ""  # клиентский сертификат
+  ssl_key: ""    # клиентский ключ
+  ca_cert: ""       # сертификат удостоверяющего центра
+
+# Интервал между проверками новых событий (в секундах)
+interval: 5
+
+# Настройки логирования агента
+logging:
+  level: "INFO"    # уровень логирования: DEBUG, INFO, WARNING, ERROR 
+  file: "agent.log"              # имя файла журнала
+
+# Настройки сбора логов Windows
+logs:
+  # Типы журналов для сбора
+  types:
+    - "Система"
+    - "Приложение"
+    - "Безопасность"
+  # За сколько часов назад собирать логи при запуске
+  hours_back: 1
+  # Автоматически отправлять в RabbitMQ
+  send_to_rabbitmq: true

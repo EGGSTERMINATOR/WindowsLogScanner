@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+
+{% block title %}Настройки - Агент сбора логов Windows{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-light">
+                <h5 class="card-title mb-0">Настройки подключения к RabbitMQ</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/settings">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rabbitmq_host" class="form-label">Хост</label>
+                                <input type="text" class="form-control" id="rabbitmq_host" name="rabbitmq_host" value="{{ config.rabbitmq.host if config.rabbitmq else '192.168.239.181' }}" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="rabbitmq_port" class="form-label">Порт</label>
+                                <input type="number" class="form-control" id="rabbitmq_port" name="rabbitmq_port" min="1" max="65535" value="{{ config.rabbitmq.port if config.rabbitmq else 5672 }}" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="rabbitmq_vhost" class="form-label">Виртуальный хост</label>
+                                <input type="text" class="form-control" id="rabbitmq_vhost" name="rabbitmq_vhost" value="{{ config.rabbitmq.vhost if config.rabbitmq else '/win_logs' }}" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rabbitmq_username" class="form-label">Имя пользователя</label>
+                                <input type="text" class="form-control" id="rabbitmq_username" name="rabbitmq_username" value="{{ config.rabbitmq.username if config.rabbitmq else 'win_agent' }}" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="rabbitmq_password" class="form-label">Пароль</label>
+                                <input type="password" class="form-control" id="rabbitmq_password" name="rabbitmq_password" value="{{ config.rabbitmq.password if config.rabbitmq else '12345678' }}" required>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input type="checkbox" class="form-check-input" id="rabbitmq_ssl" name="rabbitmq_ssl" {% if config.rabbitmq and config.rabbitmq.use_ssl %}checked{% endif %}>
+                                <label class="form-check-label" for="rabbitmq_ssl">Использовать SSL/TLS</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rabbitmq_exchange" class="form-label">Обменник (Exchange)</label>
+                                <input type="text" class="form-control" id="rabbitmq_exchange" name="rabbitmq_exchange" value="{{ config.rabbitmq.exchange if config.rabbitmq else 'windows_logs' }}" required>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="rabbitmq_routing_key" class="form-label">Ключ маршрутизации (Routing Key)</label>
+                                <input type="text" class="form-control" id="rabbitmq_routing_key" name="rabbitmq_routing_key" value="{{ config.rabbitmq.routing_key if config.rabbitmq else 'system.logs' }}" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+                        <button type="button" id="test-connection" class="btn btn-secondary">Проверить подключение</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('test-connection').addEventListener('click', function() {
+        const button = this;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Проверка...';
+        
+        // Получаем значения из формы
+        const formData = {
+            host: document.getElementById('rabbitmq_host').value,
+            port: parseInt(document.getElementById('rabbitmq_port').value),
+            vhost: document.getElementById('rabbitmq_vhost').value,
+            username: document.getElementById('rabbitmq_username').value,
+            password: document.getElementById('rabbitmq_password').value,
+            exchange: document.getElementById('rabbitmq_exchange').value,
+            routing_key: document.getElementById('rabbitmq_routing_key').value,
+            use_ssl: document.getElementById('rabbitmq_ssl').checked
+        };
+        
+        // Отправляем POST-запрос для тестирования подключения
+        fetch('/api/connect-rabbitmq', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Успешное подключение к RabbitMQ', 'success');
+            } else {
+                showAlert('Ошибка подключения к RabbitMQ: ' + data.message, 'danger');
+            }
+            button.disabled = false;
+            button.innerHTML = 'Проверить подключение';
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            showAlert('Ошибка при проверке подключения', 'danger');
+            button.disabled = false;
+            button.innerHTML = 'Проверить подключение';
+        });
+    });
+    
+    // Показ уведомления
+    function showAlert(message, type) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(alertDiv, container.firstChild);
+        
+        setTimeout(() => {
+            const bsAlert = new bootstrap.Alert(alertDiv);
+            bsAlert.close();
+        }, 5000);
+    }
+</script>
+{% endblock %}

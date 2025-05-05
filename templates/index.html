@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}Главная - Агент сбора логов Windows{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12 mb-4">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-light">
+                <h5 class="card-title mb-0">Обзор агента сбора логов Windows</h5>
+            </div>
+            <div class="card-body">
+                <p class="lead">Агент предназначен для сбора и отправки системных логов Windows 10 в RabbitMQ.</p>
+                <p>С помощью этого агента Вы можете:</p>
+                <ul>
+                    <li>Собирать системные логи из различных журналов Windows</li>
+                    <li>Фильтровать логи по уровню и другим параметрам</li>
+                    <li>Отправлять собранные логи в RabbitMQ для дальнейшей обработки</li>
+                    <li>Просматривать логи работы самого агента</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card border-secondary h-100">
+            <div class="card-header bg-secondary text-light">
+                <h5 class="card-title mb-0">Статус системы</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-hover">
+                    <tbody>
+                        <tr>
+                            <th scope="row">Платформа</th>
+                            <td>{{ system_info.platform }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">ОС</th>
+                            <td>{{ system_info.system }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Версия</th>
+                            <td>{{ system_info.release }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Архитектура</th>
+                            <td>{{ system_info.architecture[0] }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Процессор</th>
+                            <td>{{ system_info.processor }}</td>
+                        </tr>
+                        <tr>
+                            <th scope="row">Хост</th>
+                            <td>{{ system_info.hostname }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card border-info h-100">
+            <div class="card-header bg-info text-light">
+                <h5 class="card-title mb-0">Быстрые действия</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-3">
+                    <button id="connect-rabbitmq" class="btn btn-primary">
+                        <i class="bi bi-plug-fill me-1"></i> Подключиться к RabbitMQ
+                    </button>
+                    <button id="disconnect-rabbitmq" class="btn btn-danger" disabled>
+                        <i class="bi bi-plug me-1"></i> Отключиться от RabbitMQ
+                    </button>
+                    <a href="/logs" class="btn btn-secondary">
+                        <i class="bi bi-journal-text me-1"></i> Просмотр журнала агента
+                    </a>
+                    <a href="/settings" class="btn btn-info">
+                        <i class="bi bi-gear-fill me-1"></i> Настройки
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Подключение к RabbitMQ
+    document.getElementById('connect-rabbitmq').addEventListener('click', function() {
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Подключение...';
+        
+        fetch('/api/connect-rabbitmq', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Успешное подключение к RabbitMQ', 'success');
+                updateButtons(true);
+                updateRabbitMQStatus();
+            } else {
+                showAlert('Ошибка подключения: ' + data.message, 'danger');
+                updateButtons(false);
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            showAlert('Ошибка подключения к RabbitMQ', 'danger');
+            updateButtons(false);
+        });
+    });
+    
+    // Отключение от RabbitMQ
+    document.getElementById('disconnect-rabbitmq').addEventListener('click', function() {
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Отключение...';
+        
+        fetch('/api/disconnect-rabbitmq', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Успешное отключение от RabbitMQ', 'info');
+                updateButtons(false);
+                updateRabbitMQStatus();
+            } else {
+                showAlert('Ошибка отключения: ' + data.message, 'danger');
+                updateButtons(true);
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка:', error);
+            showAlert('Ошибка отключения от RabbitMQ', 'danger');
+            updateButtons(true);
+        });
+    });
+    
+    // Обновление состояния кнопок
+    function updateButtons(connected) {
+        document.getElementById('connect-rabbitmq').disabled = connected;
+        document.getElementById('connect-rabbitmq').innerHTML = '<i class="bi bi-plug-fill me-1"></i> Подключиться к RabbitMQ';
+        
+        document.getElementById('disconnect-rabbitmq').disabled = !connected;
+        document.getElementById('disconnect-rabbitmq').innerHTML = '<i class="bi bi-plug me-1"></i> Отключиться от RabbitMQ';
+    }
+    
+    // Показ уведомления
+    function showAlert(message, type) {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const container = document.querySelector('.container');
+        container.insertBefore(alertDiv, container.firstChild);
+        
+        // Автоматическое скрытие уведомления через 5 секунд
+        setTimeout(() => {
+            const bsAlert = new bootstrap.Alert(alertDiv);
+            bsAlert.close();
+        }, 5000);
+    }
+    
+    // Проверка текущего статуса при загрузке
+    fetch('/api/status')
+        .then(response => response.json())
+        .then(data => {
+            updateButtons(data.rabbitmq_connected);
+        })
+        .catch(error => {
+            console.error('Ошибка при получении статуса:', error);
+        });
+</script>
+{% endblock %}
