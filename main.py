@@ -162,7 +162,7 @@ def get_agent_logs():
 def get_status():
     """API для получения статуса подключения к RabbitMQ"""
     status = {
-        'rabbitmq_connected': rabbitmq_client.is_connected() if hasattr(rabbitmq_client, 'is_connected') else False,
+        'rabbitmq_connected': rabbitmq_client.is_connected if hasattr(rabbitmq_client, 'is_connected') else False,
         'system_info': get_system_info(),
         'current_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
