@@ -99,6 +99,11 @@ def settings():
     
     return render_template('settings.html', config=config)
 
+@app.route('/windows_logs')
+def windows_logs_page():
+    """Страница для отображения системных логов Windows"""
+    return render_template('windows_logs.html')
+
 @app.route('/api/connect-rabbitmq', methods=['POST'])
 def connect_rabbitmq():
     """API для подключения к RabbitMQ"""
