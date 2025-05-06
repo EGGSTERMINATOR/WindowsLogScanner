@@ -48,7 +48,7 @@
                                 <option value="DNS Server">Перенаправление DNS-сервера</option>
                                 <option value="Directory Service">Active Directory</option>
                             </select>
-                            <button id="streaming-toggle" class="btn btn-primary">
+                            <button id="streaming-toggle" class="btn btn-primary" style="width: 180px;">
                                 <i class="bi bi-cast"></i> Начать передачу
                             </button>
                         </div>
@@ -428,22 +428,6 @@
     }
     
     // Функция для показа уведомлений
-    function showAlert(message, type) {
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-        alertDiv.role = 'alert';
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
-        
-        const container = document.querySelector('.container');
-        container.insertBefore(alertDiv, container.firstChild);
-        
-        setTimeout(() => {
-            const bsAlert = new bootstrap.Alert(alertDiv);
-            bsAlert.close();
-        }, 5000);
-    }
+    // Используем showAlert из main.js для показа уведомлений в модальном окне
 </script>
 {% endblock %}

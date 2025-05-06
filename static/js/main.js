@@ -45,24 +45,41 @@ function updateRabbitMQStatus() {
         });
 }
 
-// Показ уведомления
+// Показ уведомления в модальном окне
 function showAlert(message, type) {
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.role = 'alert';
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    `;
+    // Используем модальное окно для уведомлений
+    const modalElement = document.getElementById('notificationModal');
+    const messageElement = document.getElementById('notification-message');
     
-    const container = document.querySelector('.container');
-    container.insertBefore(alertDiv, container.firstChild);
-    
-    // Автоматическое скрытие уведомления через 5 секунд
-    setTimeout(() => {
-        const bsAlert = new bootstrap.Alert(alertDiv);
-        bsAlert.close();
-    }, 5000);
+    if (modalElement && messageElement) {
+        // Добавляем цвет в зависимости от типа уведомления
+        messageElement.className = '';
+        if (type === 'success') {
+            messageElement.className = 'text-success';
+        } else if (type === 'danger' || type === 'error') {
+            messageElement.className = 'text-danger';
+        } else if (type === 'warning') {
+            messageElement.className = 'text-warning';
+        } else if (type === 'info') {
+            messageElement.className = 'text-info';
+        }
+        
+        // Устанавливаем сообщение
+        messageElement.textContent = message;
+        
+        // Создаем экземпляр модального окна
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+        
+        // Автоматически скрываем через 3 секунды
+        setTimeout(() => {
+            modal.hide();
+        }, 3000);
+    } else {
+        // Если модальное окно не найдено, используем стандартный вариант
+        console.warn('Модальное окно для уведомлений не найдено, используем альтернативный вариант');
+        alert(message);
+    }
 }
 
 // Подключение к RabbitMQ
