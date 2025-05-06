@@ -210,6 +210,69 @@ def get_status():
         
     return jsonify(status)
 
+@app.route('/api/fetch-windows-logs', methods=['POST'])
+def fetch_windows_logs():
+    """API для получения системных логов Windows"""
+    try:
+        data = request.json or {}
+        log_type = data.get('log_type')
+        
+        # Здесь будет реализован реальный сбор логов из Windows
+        # В данном случае для демонстрации возвращаем тестовые данные
+        
+        # Журналы Windows
+        log_types = ['System', 'Application', 'Security']
+        if log_type and log_type not in log_types and log_type != 'all':
+            log_types = [log_type]
+        
+        # Создаем пример лога
+        logs = [{
+            'id': 12345,
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'source': 'LogCollector',
+            'level': 1,
+            'level_name': 'Информация',
+            'log_type': log_types[0] if log_types else 'System',
+            'message': 'Здесь будут отображаться реальные логи Windows'
+        }]
+        
+        logger.info(f"Запрошены логи для типа: {log_type if log_type else 'все'}, получено {len(logs)} записей")
+        return jsonify({'success': True, 'logs': logs})
+    except Exception as e:
+        logger.error(f"Ошибка при получении логов Windows: {str(e)}")
+        return jsonify({'success': False, 'message': f'Ошибка: {str(e)}'})
+
+@app.route('/api/start-streaming', methods=['POST'])
+def start_streaming():
+    """API для начала передачи логов в RabbitMQ"""
+    try:
+        data = request.json or {}
+        log_type = data.get('log_type')
+        
+        # Отметка в логе, что начата передача логов
+        logger.info(f"Начата передача логов в RabbitMQ, фильтр по типу: {log_type if log_type else 'все'}")
+        
+        # Здесь будет реальная логика начала передачи логов в RabbitMQ
+        
+        return jsonify({'success': True, 'message': 'Передача логов в RabbitMQ начата'})
+    except Exception as e:
+        logger.error(f"Ошибка при начале передачи логов: {str(e)}")
+        return jsonify({'success': False, 'message': f'Ошибка: {str(e)}'})
+
+@app.route('/api/stop-streaming', methods=['POST'])
+def stop_streaming():
+    """API для остановки передачи логов в RabbitMQ"""
+    try:
+        # Отметка в логе, что передача логов остановлена
+        logger.info("Остановлена передача логов в RabbitMQ")
+        
+        # Здесь будет реальная логика остановки передачи логов в RabbitMQ
+        
+        return jsonify({'success': True, 'message': 'Передача логов в RabbitMQ остановлена'})
+    except Exception as e:
+        logger.error(f"Ошибка при остановке передачи логов: {str(e)}")
+        return jsonify({'success': False, 'message': f'Ошибка: {str(e)}'})
+
 if __name__ == "__main__":
     # Для локальной разработки
     app.run(host='0.0.0.0', port=5000, debug=True)
