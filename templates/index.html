@@ -90,101 +90,43 @@
 
 {% block scripts %}
 <script>
-    // Подключение к RabbitMQ
-    document.getElementById('connect-rabbitmq').addEventListener('click', function() {
-        this.disabled = true;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Подключение...';
-        
-        fetch('/api/connect-rabbitmq', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('Успешное подключение к RabbitMQ', 'success');
-                updateButtons(true);
-                updateRabbitMQStatus();
-            } else {
-                showAlert('Ошибка подключения: ' + data.message, 'danger');
-                updateButtons(false);
-            }
-        })
-        .catch(error => {
-            console.error('Ошибка:', error);
-            showAlert('Ошибка подключения к RabbitMQ', 'danger');
-            updateButtons(false);
-        });
-    });
-    
-    // Отключение от RabbitMQ
-    document.getElementById('disconnect-rabbitmq').addEventListener('click', function() {
-        this.disabled = true;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Отключение...';
-        
-        fetch('/api/disconnect-rabbitmq', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('Успешное отключение от RabbitMQ', 'info');
-                updateButtons(false);
-                updateRabbitMQStatus();
-            } else {
-                showAlert('Ошибка отключения: ' + data.message, 'danger');
-                updateButtons(true);
-            }
-        })
-        .catch(error => {
-            console.error('Ошибка:', error);
-            showAlert('Ошибка отключения от RabbitMQ', 'danger');
-            updateButtons(true);
-        });
-    });
-    
-    // Обновление состояния кнопок
+    // Обновление состояния кнопок (только интерфейс, без запросов на сервер)
     function updateButtons(connected) {
-        document.getElementById('connect-rabbitmq').disabled = connected;
-        document.getElementById('connect-rabbitmq').innerHTML = '<i class="bi bi-plug-fill me-1"></i> Подключиться к RabbitMQ';
+        const connectButton = document.getElementById('connect-rabbitmq');
+        const disconnectButton = document.getElementById('disconnect-rabbitmq');
         
-        document.getElementById('disconnect-rabbitmq').disabled = !connected;
-        document.getElementById('disconnect-rabbitmq').innerHTML = '<i class="bi bi-plug me-1"></i> Отключиться от RabbitMQ';
+        if (connectButton) {
+            connectButton.disabled = connected;
+            connectButton.innerHTML = '<i class="bi bi-plug-fill me-1"></i> Подключиться к RabbitMQ';
+        }
+        
+        if (disconnectButton) {
+            disconnectButton.disabled = !connected;
+            disconnectButton.innerHTML = '<i class="bi bi-plug me-1"></i> Отключиться от RabbitMQ';
+        }
     }
-    
-    // Показ уведомления
-    function showAlert(message, type) {
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-        alertDiv.role = 'alert';
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        `;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Подключаем обработчики событий к кнопкам
+        const connectButton = document.getElementById('connect-rabbitmq');
+        if (connectButton) {
+            connectButton.addEventListener('click', connectToRabbitMQ);
+        }
         
-        const container = document.querySelector('.container');
-        container.insertBefore(alertDiv, container.firstChild);
+        const disconnectButton = document.getElementById('disconnect-rabbitmq');
+        if (disconnectButton) {
+            disconnectButton.addEventListener('click', disconnectFromRabbitMQ);
+        }
         
-        // Автоматическое скрытие уведомления через 5 секунд
-        setTimeout(() => {
-            const bsAlert = new bootstrap.Alert(alertDiv);
-            bsAlert.close();
-        }, 5000);
-    }
-    
-    // Проверка текущего статуса при загрузке
-    fetch('/api/status')
-        .then(response => response.json())
-        .then(data => {
-            updateButtons(data.rabbitmq_connected);
-        })
-        .catch(error => {
-            console.error('Ошибка при получении статуса:', error);
-        });
+        // Проверка текущего статуса при загрузке
+        fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                updateButtons(data.rabbitmq_connected);
+            })
+            .catch(error => {
+                console.error('Ошибка при получении статуса:', error);
+            });
+    });
 </script>
 {% endblock %}
